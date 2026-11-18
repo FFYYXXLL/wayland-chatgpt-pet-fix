@@ -1,0 +1,12 @@
+[[window_rule]]
+match.app_id = '^chatgpt$'
+match.title = '^(ChatGPT Desktop Pet|Codex Pet Overlay)$'
+default_floating = true
+default_focused = false
+default_position = { x = 0, y = 0, anchor = "top_left" }
+default_pinned = true
+opacity = 1.0
+border_width = 0
+shadow = false
+corner_radius = 0
+blur = false
