@@ -45,6 +45,12 @@ def patch_bundle(data, kind):
         sub('function uG(e){return{mascot:', 'function uG(e){return{...(umbrielPet?{umbrielOrigin:e.umbrielOrigin}:{}),mascot:')
         sub('setWindowBounds(e,t,r){if','setWindowBounds(e,t,r){if(umbrielPet){let [w,h]=e.getContentSize();if(w!==t.width||h!==t.height)e.setContentSize(t.width,t.height,false);return}if')
         sub('applyPointerInteractivityPolicy(){let e=this.window;', 'applyPointerInteractivityPolicy(){let e=this.window;if(umbrielPet&&e&&!e.isDestroyed()){e.setInputShape((this.pointerInput.inputShape??[]).map(({left:x,top:y,width,height})=>({x,y,width,height})));return}')
+    elif kind == "sprite":
+        hook = Path(__file__).with_name("sprite-refresh.js").read_text()
+        marker = 'let v=({assetMap:e,className:t,lookFrame:n'
+        sub(marker, hook + marker)
+        sub('g=(0,s.useRef)(null),v=(0,a.I)(),y=u&&h?', 'g=(0,s.useRef)(null),spriteUrl=usePetSpriteUrl(c.petId??c.assetRef,c.spritesheetUrl??e[c.assetRef]),v=(0,a.I)(),y=u&&h?')
+        sub('backgroundImage:`url(${c.spritesheetUrl??e[c.assetRef]})`','backgroundImage:`url(${spriteUrl})`')
     else:
         sub('}(rR.current,ni);l()(rO.current,t)', '}(rR.current,ni);if(umbrielOrigin)umbrielControlRects=a;l()(rO.current,t)')
         sub('r_.setPointerRegions(t,a)','r_.setPointerRegions(umbrielOrigin?[...t,...a.map(({left,top,width,height})=>({left:Math.floor(left),top:Math.floor(top),width:Math.ceil(left+width)-Math.floor(left),height:Math.ceil(top+height)-Math.floor(top)}))]:t,a)')
@@ -56,7 +62,7 @@ def patch_bundle(data, kind):
         sub('return{screenX:e.screenX,screenY:e.screenY,timeMs:', 'return{screenX:umbrielOrigin?e.clientX+umbrielOrigin.x:e.screenX,screenY:umbrielOrigin?e.clientY+umbrielOrigin.y:e.screenY,timeMs:')
         sub('samples:[aV(e)],screenX:e.screenX,screenY:e.screenY','samples:[aV(e)],screenX:aV(e).screenX,screenY:aV(e).screenY')
         sub('pointerScreenX:e.screenX,pointerScreenY:e.screenY,pointerWindowX:', 'pointerScreenX:aV(e).screenX,pointerScreenY:aV(e).screenY,pointerWindowX:')
-        sub('eV=e=>{let{isGlobalRealtimeVoicePresentation:', 'eV=e=>{umbrielOrigin=e.layout?.umbrielOrigin??null;let{isGlobalRealtimeVoicePresentation:')
+        sub('eV=e=>{let{isGlobalRealtimeVoicePresentation:', 'eV=e=>{umbrielOrigin=e.layout?.umbrielOrigin??null;document.documentElement.toggleAttribute("data-umbriel-pet",!!umbrielOrigin);let{isGlobalRealtimeVoicePresentation:')
         sub('"data-avatar-overlay-hit-region":"tray-mascot-bridge"', '"data-avatar-overlay-hit-region":umbrielOrigin?undefined:"tray-mascot-bridge"')
     with tempfile.TemporaryDirectory() as directory:
         script = Path(directory) / ("main.cjs" if kind == "main" else "renderer.mjs")
@@ -75,7 +81,7 @@ def build(source_path, output_path):
         archive_entries = sorted(entries(header), key=lambda item: int(item[1]["offset"]))
         replacements = []
         shift = 0
-        renderer_matches = 0
+        kinds = []
         for path, entry in archive_entries:
             offset, old_size = int(entry["offset"]), entry["size"]
             entry["offset"] = str(offset + shift)
@@ -83,15 +89,16 @@ def build(source_path, output_path):
                 continue
             source.seek(old_data_start + offset)
             data = source.read(old_size)
-            if path == CHUNK:
-                if digest(data) != ORIGINAL_HASH:
-                    raise SystemExit("Expected the original ChatGPT 26.1111.21308 archive.")
+            if path.startswith(".vite/build/") and b'applyPointerInteractivityPolicy(){' in data and b'initialRoute:"/avatar-overlay"' in data:
                 kind = "main"
+            elif b'let v=({assetMap:e,className:t,lookFrame:n' in data and b'backgroundImage:`url(${c.spritesheetUrl??e[c.assetRef]})`' in data:
+                kind = "sprite"
             elif any(all(needle in data for needle in group) for group in RENDERER_NEEDLES):
                 kind = "renderer"
-                renderer_matches += 1
+
             else:
                 continue
+            kinds.append(kind)
             patched = patch_bundle(data, kind)
             print(f"Patched {kind} {path}")
             entry["size"] = len(patched)
@@ -103,8 +110,8 @@ def build(source_path, output_path):
             ]
             replacements.append((offset, old_size, patched))
             shift += len(patched) - old_size
-        if renderer_matches != 1 or len(replacements) != 2:
-            raise SystemExit("Expected one main bundle and one pet renderer bundle.")
+        if sorted(kinds) != ["main", "renderer", "sprite"]:
+            raise SystemExit("Expected the main, overlay renderer and sprite bundles.")
 
         serialized = json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         padding = b"\0" * (-len(serialized) % 4)

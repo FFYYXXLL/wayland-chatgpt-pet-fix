@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = chatgpt-desktop
+
+[Action]
+Description = Applying the Umbriel Wayland desktop pet patch...
+When = PostTransaction
+Exec = /usr/local/lib/wayland-chatgpt-pet-fix/apply-installed

@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/bin
+resources=/usr/lib/chatgpt/resources
+archive=$resources/app.asar
+state=/var/lib/wayland-chatgpt-pet-fix
+install -d -m 755 "$state"
+exec 9>"$state/lock"
+flock 9
+if [[ -f $state/installed.sha256 ]] && sha256sum --check --status "$state/installed.sha256"; then
+    echo 'Wayland pet patch already installed.'
+    exit 0
+fi
+stage=$(mktemp -d "$resources/.pet-patch.XXXXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
+python /usr/local/lib/wayland-chatgpt-pet-fix/patch.py "$archive" "$stage/app.asar"
+chmod --reference="$archive" "$stage/app.asar"
+cp --reflink=auto --preserve=mode "$archive" "$state/original.new"
+mv -fT "$state/original.new" "$state/original.asar"
+hash=$(sha256sum "$stage/app.asar")
+printf '%s  %s\n' "${hash%% *}" "$archive" > "$state/installed.new"
+mv -fT "$stage/app.asar" "$archive"
+mv -fT "$state/installed.new" "$state/installed.sha256"
